@@ -17,6 +17,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { background-color: #002b55; border: 1px solid #d4af37; color: white; border-radius: 5px; padding: 10px; }
     .stTextInput>div>div>input, .stSelectbox>div>div>div { background-color: #002b55 !important; color: white !important; border: 1px solid #d4af37 !important; }
     .stDataFrame { background-color: #002b55; border: 1px solid #d4af37; border-radius: 5px; }
+    .badge-cliente { background-color: #d4af37; color: #001f3f; padding: 2px 8px; border-radius: 10px; font-weight: bold; font-size: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -26,11 +27,7 @@ if 'db_users' not in st.session_state:
 if 'db_pessoas' not in st.session_state:
     st.session_state.db_pessoas = pd.DataFrame(columns=['Nome', 'CPF_CNPJ', 'Email'])
 if 'db_processos' not in st.session_state:
-    st.session_state.db_processos = pd.DataFrame(columns=['CNJ', 'Pessoa_Vinculada', 'Papel', 'Assunto', 'Status'])
-if 'db_movimentacoes' not in st.session_state:
-    st.session_state.db_movimentacoes = pd.DataFrame(columns=['CNJ', 'Data', 'Titulo', 'Descricao'])
-if 'db_memoria_ia' not in st.session_state:
-    st.session_state.db_memoria_ia = pd.DataFrame(columns=['CNJ', 'Role', 'Content'])
+    st.session_state.db_processos = pd.DataFrame(columns=['CNJ', 'Vara', 'Comarca', 'Pessoa', 'Polo', 'E_Cliente', 'Status'])
 
 if 'user_logged' not in st.session_state:
     st.session_state.user_logged = None
@@ -74,8 +71,6 @@ if menu == "👥 Pessoas":
             if cb1.form_submit_button("SALVAR"):
                 if not p_nome or not p_doc:
                     st.error("Preencha Nome e CPF/CNPJ.")
-                elif p_doc in st.session_state.db_pessoas['CPF_CNPJ'].values:
-                    st.error("CPF/CNPJ já cadastrado.")
                 else:
                     nova_p = pd.DataFrame([[p_nome, p_doc, p_mail]], columns=st.session_state.db_pessoas.columns)
                     st.session_state.db_pessoas = pd.concat([st.session_state.db_pessoas, nova_p], ignore_index=True)
@@ -84,8 +79,6 @@ if menu == "👥 Pessoas":
             if cb2.form_submit_button("CANCELAR"):
                 st.session_state.f_p_aberto = False
                 st.rerun()
-
-    st.write("### Lista de Pessoas")
     st.dataframe(st.session_state.db_pessoas, use_container_width=True)
 
 # --- MÓDULO PROCESSOS ---
@@ -101,24 +94,31 @@ elif menu == "📋 Processos":
 
         if st.session_state.get('f_pr_aberto'):
             with st.form("form_proc"):
-                st.subheader("🆕 Novo Processo")
+                st.subheader("🆕 Vincular Processo")
                 cnj = st.text_input("Número CNJ")
+                c1, c2 = st.columns(2)
+                vara = c1.text_input("Vara")
+                comarca = c2.text_input("Comarca")
                 
-                lista_pessoas = st.session_state.db_pessoas['Nome'].tolist()
-                p_vinculo = st.selectbox("Vincular Pessoa", ["Nenhuma pessoa cadastrada"] if not lista_pessoas else lista_pessoas)
-                papel = st.selectbox("Papel no Processo", ["Cliente", "Parte Contrária", "Assistente", "Terceiro"])
-                assunto = st.text_input("Assunto / Tese Principal")
+                st.write("---")
+                lista_p = st.session_state.db_pessoas['Nome'].tolist()
+                pessoa_sel = st.selectbox("Vincular Pessoa", ["Nenhuma cadastrada"] if not lista_p else lista_p)
+                
+                col_p1, col_p2 = st.columns(2)
+                polo = col_p1.selectbox("Polo no Processo", ["Polo Ativo", "Polo Passivo", "Terceiro"])
+                e_cliente = col_p2.checkbox("Marcar como Cliente do escritório")
                 
                 cb1, cb2 = st.columns(2)
                 if cb1.form_submit_button("SALVAR PROCESSO"):
                     if not cnj:
-                        st.warning("⚠️ Erro: Sem número cadastrado (CNJ obrigatório).")
-                    elif not lista_pessoas or p_vinculo == "Nenhuma pessoa cadastrada":
-                        st.warning("⚠️ Erro: Sem pessoa vinculada. Cadastre uma pessoa no módulo 'Pessoas' primeiro.")
-                    elif cnj in st.session_state.db_processos['CNJ'].values:
-                        st.error("CNJ já cadastrado.")
+                        st.warning("⚠️ CNJ obrigatório.")
+                    elif pessoa_sel == "Nenhuma cadastrada":
+                        st.warning("⚠️ Selecione uma pessoa.")
+                    elif not e_cliente:
+                        st.error("❌ Erro: É obrigatório marcar pelo menos uma pessoa como cliente.")
                     else:
-                        novo_p = pd.DataFrame([[cnj, p_vinculo, papel, assunto, "Ativo"]], columns=st.session_state.db_processos.columns)
+                        novo_p = pd.DataFrame([[cnj, vara, comarca, pessoa_sel, polo, "Sim" if e_cliente else "Não", "Ativo"]], 
+                                             columns=st.session_state.db_processos.columns)
                         st.session_state.db_processos = pd.concat([st.session_state.db_processos, novo_p], ignore_index=True)
                         st.session_state.f_pr_aberto = False
                         st.rerun()
@@ -126,49 +126,35 @@ elif menu == "📋 Processos":
                     st.session_state.f_pr_aberto = False
                     st.rerun()
 
+        # Exibição da Carteira com destaque de Cliente
         st.write("### Carteira Ativa")
-        st.dataframe(st.session_state.db_processos, use_container_width=True)
-
-    with aba_gestao:
-        if st.session_state.db_processos.empty:
-            st.info("Nenhum processo para gerir.")
+        if not st.session_state.db_processos.empty:
+            # Formatação simples para destaque
+            df_view = st.session_state.db_processos.copy()
+            df_view['Cliente?'] = df_view['E_Cliente'].apply(lambda x: "⭐ CLIENTE" if x == "Sim" else "-")
+            st.dataframe(df_view[['CNJ', 'Vara', 'Comarca', 'Pessoa', 'Polo', 'Cliente?']], use_container_width=True)
         else:
-            p_sel = st.selectbox("Selecionar Processo:", st.session_state.db_processos['CNJ'].tolist())
-            st.write(f"Gerindo: **{p_sel}**")
-            # Aqui seguem as abas de Movimentações e IA...
+            st.info("Nenhum processo cadastrado.")
 
 # --- MÓDULO USUÁRIOS ---
 elif menu == "👤 Usuários":
     st.header("Gestão de Equipe")
     col_t, col_b = st.columns([4, 1.2])
     with col_b:
-        if st.button("➕ Cadastrar Usuário"):
-            st.session_state.f_u_aberto = True
-
+        if st.button("➕ Cadastrar Usuário"): st.session_state.f_u_aberto = True
+    
     if st.session_state.get('f_u_aberto'):
-        with st.form("form_user"):
-            st.subheader("👤 Novo Usuário")
-            un = st.text_input("Nome Completo")
+        with st.form("u_f"):
+            un = st.text_input("Nome")
             ue = st.text_input("E-mail")
-            ud = st.text_input("CPF ou CNPJ")
-            up = st.selectbox("Perfil de Acesso", ["Advogado", "Estagiário", "Admin"])
-            
-            cb1, cb2 = st.columns(2)
-            if cb1.form_submit_button("SALVAR USUÁRIO"):
-                if un and ue and ud:
-                    nu = pd.DataFrame([[un, ue, ud, up]], columns=st.session_state.db_users.columns)
-                    st.session_state.db_users = pd.concat([st.session_state.db_users, nu], ignore_index=True)
-                    st.session_state.f_u_aberto = False
-                    st.rerun()
-                else:
-                    st.error("Todos os campos são obrigatórios.")
-            if cb2.form_submit_button("CANCELAR"):
+            ud = st.text_input("CPF/CNPJ")
+            perf = st.selectbox("Perfil", ["Advogado", "Estagiário", "Admin"])
+            if st.form_submit_button("SALVAR"):
+                nu = pd.DataFrame([[un, ue, ud, perf]], columns=st.session_state.db_users.columns)
+                st.session_state.db_users = pd.concat([st.session_state.db_users, nu], ignore_index=True)
                 st.session_state.f_u_aberto = False
                 st.rerun()
-                
-    st.write("### Usuários Cadastrados")
     st.dataframe(st.session_state.db_users, use_container_width=True)
 
 elif menu == "⚙️ Configurações":
-    st.header("Configurações do Sistema")
-    st.text_input("Nome do Escritório", "Costa & Tavares")
+    st.header("Configurações Gerais")
