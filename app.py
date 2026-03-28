@@ -22,7 +22,7 @@ try:
     API_KEY = st.secrets["GEMINI_KEY"]
     genai.configure(api_key=API_KEY)
     # Busca o modelo disponível automaticamente (como fizemos no Colab)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
 except:
     st.error("Erro na Chave API. Configure os Secrets no Streamlit Cloud.")
 
