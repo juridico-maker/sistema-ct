@@ -1,72 +1,59 @@
-import streamlit as st
-import google.generativeai as genai
-from docx import Document
-from io import BytesIO
-
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="C&T - Sistema Jurídico", page_icon="⚖️", layout="wide")
-
-# --- ESTILO C&T (PRETO E DOURADO) ---
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; color: white; }
-    .stButton>button { background-color: #d4af37; color: black; font-weight: bold; border-radius: 5px; border: none; }
-    .stTextInput>div>div>input { background-color: #262626; color: white; border: 1px solid #d4af37; }
-    h1, h2, h3 { color: #d4af37 !important; }
-    div[data-testid="stExpander"] { border: 1px solid #d4af37; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- CONFIGURAÇÃO DA IA (SEGURA) ---
-try:
-    API_KEY = st.secrets["GEMINI_KEY"]
-    genai.configure(api_key=API_KEY)
-    # Busca o modelo disponível automaticamente (como fizemos no Colab)
-    model = genai.GenerativeModel('gemini-2.5-flash')
-except:
-    st.error("Erro na Chave API. Configure os Secrets no Streamlit Cloud.")
-
-# --- FUNÇÃO WORD ---
-def gerar_docx(texto):
-    doc = Document()
-    doc.add_heading('COSTA & TAVARES ADVOGADOS ASSOCIADOS', 0)
-    doc.add_paragraph(texto)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-# --- INTERFACE ---
-st.title("⚖️ Sistema C&T - Inteligência Jurídica")
-
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
-    st.header("Painel Costa & Tavares")
-    st.info("Sistema Online Ativo")
-
-col1, col2 = st.columns(2)
-with col1:
-    cliente = st.text_input("Nome do Cliente")
-    assunto = st.text_input("Assunto (Ex: Indenizatória)")
-with col2:
-    tipo_peca = st.selectbox("Tipo de Peça", ["Petição Inicial", "Contestação", "Réplica", "Recurso"])
-    cnj = st.text_input("Processo CNJ")
-
-fatos = st.text_area("Descrição do Caso e Teses", height=150)
-
-if st.button("ANALISAR E REDIGIR PEÇA"):
-    with st.spinner("O Agente C&T está processando..."):
-        prompt = f"Advogado C&T. Caso: {assunto}. Peça: {tipo_peca}. Fatos: {fatos}. Redija a minuta."
-        response = model.generate_content(prompt)
-        minuta = response.text
+# --- MÓDULO IA ESTRATÉGICA (AGENTE C&T) ---
+elif menu == "🤖 IA Estratégica":
+    st.header("Agente Estratégico Costa & Tavares")
+    
+    # Seleção do Processo para Contexto
+    if st.session_state.db_processos.empty:
+        st.warning("Cadastre um processo no módulo '📋 Processos' para iniciar a análise.")
+    else:
+        proc_selecionado = st.selectbox("Selecione o Processo para Análise:", st.session_state.db_processos['CNJ'].tolist())
         
-        st.subheader("📄 Minuta Sugerida")
-        st.write(minuta)
+        # Recupera dados do processo selecionado para o Contexto
+        dados_proc = st.session_state.db_processos[st.session_state.db_processos['CNJ'] == proc_selecionado].iloc[0]
         
-        docx = gerar_docx(minuta)
-        st.download_button(
-            label="📥 BAIXAR EM WORD (.DOCX)",
-            data=docx,
-            file_name=f"C&T_{cliente}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        st.info(f"📌 **Contexto Atual:** Cliente {dados_proc['Cliente']} | Assunto: {dados_proc['Assunto']} | Status: {dados_proc['Status']}")
+
+        # Chat Interface
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        if prompt_user := st.chat_input("Como posso ajudar nesta estratégia?"):
+            st.session_state.messages.append({"role": "user", "content": prompt_user})
+            with st.chat_message("user"):
+                st.markdown(prompt_user)
+
+            with st.chat_message("assistant"):
+                # MONTAGEM DO CONTEXTO PARA O SISTEMA
+                contexto_completo = f"""
+                Você é o Agente de IA Estratégica do escritório Costa & Tavares.
+                DADOS DO PROCESSO ATUAL:
+                - CNJ: {dados_proc['CNJ']}
+                - CLIENTE: {dados_proc['Cliente']}
+                - ASSUNTO: {dados_proc['Assunto']}
+                - STATUS: {dados_proc['Status']}
+                - RESPONSÁVEL: {dados_proc['Advogado']}
+                
+                HISTÓRICO E DIRETRIZES:
+                Analise os fatos com rigor técnico jurídico. Sugira próximos passos, identifique riscos e ajude na redação de teses.
+                O usuário perguntou: {prompt_user}
+                """
+                
+                # Chamada do Motor do Sistema (Anthropic ou Gemini)
+                try:
+                    # Usando a conexão que já configuramos nos Secrets
+                    client = Anthropic(api_key=st.secrets["CLAUDE_KEY"])
+                    response = client.messages.create(
+                        model="claude-3-5-sonnet-20240620",
+                        max_tokens=2000,
+                        system="Você é um advogado sênior da Costa & Tavares. Seja direto, técnico e estratégico.",
+                        messages=[{"role": "user", "content": contexto_completo}]
+                    )
+                    full_response = response.content[0].text
+                    st.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.error(f"Erro de Conexão com o Motor do Sistema: {e}")
